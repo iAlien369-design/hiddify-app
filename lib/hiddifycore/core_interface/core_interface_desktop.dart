@@ -101,10 +101,10 @@ class CoreInterfaceDesktop extends CoreInterface with InfraLogger {
       if (err.isNotEmpty) {
         return err;
       }
-      final res = await helloClient.sayHello(HelloRequest(name: "test"));
-      loggy.info(res.toString());
+      final helloResponse = await helloClient.sayHello(HelloRequest(name: "test"));
+      loggy.info(helloResponse.toString());
     }
-    bgClient = fgClient = CoreClient(
+    backgroundClient = foregroundClient = CoreClient(
       ClientChannel(
         'localhost',
         port: port,

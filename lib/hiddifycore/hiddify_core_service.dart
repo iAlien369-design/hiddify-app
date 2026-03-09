@@ -67,11 +67,11 @@ class HiddifyCoreService with InfraLogger {
   TaskEither<String, Unit> validateConfigByPath(String path, String tempPath, bool debug) {
     return TaskEither(() async {
       try {
-        final response = await core.fgClient.parse(ParseRequest(tempPath: tempPath, configPath: path, debug: false));
+        final response = await core.foregroundClient.parse(ParseRequest(tempPath: tempPath, configPath: path, debug: false));
         if (response.responseCode != ResponseCode.OK) return left("${response.responseCode} ${response.message}");
       } catch (e) {
         await setup().run();
-        final response = await core.fgClient.parse(ParseRequest(tempPath: tempPath, configPath: path, debug: false));
+        final response = await core.foregroundClient.parse(ParseRequest(tempPath: tempPath, configPath: path, debug: false));
         if (response.responseCode != ResponseCode.OK) return left("${response.responseCode} ${response.message}");
       }
       return right(unit);
@@ -80,7 +80,7 @@ class HiddifyCoreService with InfraLogger {
 
   TaskEither<String, String> generateFullConfigByPath(String path) {
     return TaskEither(() async {
-      final response = await core.fgClient.parse(ParseRequest(configPath: path, debug: false));
+      final response = await core.foregroundClient.parse(ParseRequest(configPath: path, debug: false));
       if (response.responseCode != ResponseCode.OK) return left("${response.responseCode} ${response.message}");
       return right(response.content);
     });
@@ -97,13 +97,13 @@ class HiddifyCoreService with InfraLogger {
           return left(setupResponse);
         }
 
-        await startListeningLogs("fg", core.fgClient);
-        // await startListeningStatus("fg", core.fgClient);
-        if (!core.isSingleChannel()) {
-          await startListeningLogs("bg", core.bgClient);
+        await startListeningLogs("fg", core.foregroundClient);
+        // await startListeningStatus("fg", core.foregroundClient);
+        if (!core.isUsingSharedChannel()) {
+          await startListeningLogs("bg", core.backgroundClient);
         }
         statusController.add(currentState);
-        await startListeningStatus("bg", core.bgClient);
+        await startListeningStatus("bg", core.backgroundClient);
         // ref.read(coreRestartSignalProvider.notifier).restart();
         return right(unit);
       } catch (e) {
@@ -117,11 +117,11 @@ class HiddifyCoreService with InfraLogger {
       loggy.debug("changing options");
       // latestOptions = options;
       try {
-        final res = await core.fgClient.changeHiddifySettings(
+        final settingsResponse = await core.foregroundClient.changeHiddifySettings(
           ChangeHiddifySettingsRequest(hiddifySettingsJson: jsonEncode(options.toJson())),
         );
-        if (res.messageType != MessageType.EMPTY) return left("${res.messageType} ${res.message}");
-        await core.bgClient.changeHiddifySettings(
+        if (settingsResponse.messageType != MessageType.EMPTY) return left("${settingsResponse.messageType} ${settingsResponse.message}");
+        await core.backgroundClient.changeHiddifySettings(
           ChangeHiddifySettingsRequest(hiddifySettingsJson: jsonEncode(options.toJson())),
         );
       } on GrpcError catch (e) {
@@ -145,9 +145,9 @@ class HiddifyCoreService with InfraLogger {
         statusController.add(currentState = const CoreStatus.stopped());
         return left(background.getCoreAlert() ?? const ConnectionFailure.unexpected("failed to start core"));
       }
-      if (!core.isSingleChannel()) {
-        await startListeningLogs("bg", core.bgClient);
-        await startListeningStatus("bg", core.bgClient);
+      if (!core.isUsingSharedChannel()) {
+        await startListeningLogs("bg", core.backgroundClient);
+        await startListeningStatus("bg", core.backgroundClient);
       }
       // if (latestOptions != null) {
       //   await core.bgClient.changeHiddifySettings(
@@ -159,7 +159,7 @@ class HiddifyCoreService with InfraLogger {
       // final content = await File(path).readAsString();
       // loggy.debug("starting with content: $content");
       try {
-        final res = await core.bgClient.start(
+        final startResponse = await core.backgroundClient.start(
           StartRequest(
             configPath: path,
             configName: name,
@@ -168,7 +168,7 @@ class HiddifyCoreService with InfraLogger {
           ),
         );
         ref.read(coreRestartSignalProvider.notifier).restart();
-        if (res.messageType != MessageType.ALREADY_STARTED && res.messageType != MessageType.EMPTY) {
+        if (startResponse.messageType != MessageType.ALREADY_STARTED && startResponse.messageType != MessageType.EMPTY) {
           statusController.add(currentState = const CoreStatus.stopped(alert: CoreAlert.startFailed));
           return left(const ConnectionFailure.unexpected("failed to start background core"));
         }
@@ -194,12 +194,14 @@ class HiddifyCoreService with InfraLogger {
   TaskEither<String, Unit> stop() {
     return TaskEither(() async {
       loggy.debug("stopping");
-      var errMsg = "";
+      var errorMessage = "";
       try {
-        final res = await core.bgClient.stop(Empty());
+        // The stop response is intentionally not checked here;
+        // errors are captured via the GrpcError/catch handlers below.
+        await core.backgroundClient.stop(Empty());
       } on GrpcError catch (e) {
         if (e.code == StatusCode.unknown && !(e.message?.contains("HTTP/2") ?? false)) {
-          errMsg = e.message ?? "failed to stop core: $e";
+          errorMessage = e.message ?? "failed to stop core: $e";
 
           loggy.error("failed to stop bg core: $e");
         }
@@ -209,7 +211,7 @@ class HiddifyCoreService with InfraLogger {
       }
       if (!await core.stop()) {}
       statusController.add(currentState = const CoreStatus.stopped());
-      if (errMsg.isNotEmpty) return left(errMsg);
+      if (errorMessage.isNotEmpty) return left(errorMessage);
       return right(unit);
     });
   }
@@ -219,10 +221,10 @@ class HiddifyCoreService with InfraLogger {
       loggy.debug("restarting");
       // if (!await core.restart(path, name)) {
       try {
-        final res = await core.bgClient.restart(
+        final restartResponse = await core.backgroundClient.restart(
           StartRequest(configPath: path, configName: name, disableMemoryLimit: disableMemoryLimit, delayStart: true),
         );
-        if (res.messageType != MessageType.EMPTY) return left("${res.messageType} ${res.message}");
+        if (restartResponse.messageType != MessageType.EMPTY) return left("${restartResponse.messageType} ${restartResponse.message}");
       } on GrpcError catch (e) {
         loggy.error("failed to restart bg core: $e");
         if (e.code == StatusCode.unknown && !(e.message?.contains("HTTP/2 error") ?? false)) {
@@ -234,9 +236,9 @@ class HiddifyCoreService with InfraLogger {
       // await stop().run();
       // return await start(path, name, disableMemoryLimit).run();
       // }
-      // if (!core.isSingleChannel()) {
-      //   await startListeningStatus("bg", core.bgClient);
-      //   await startListeningLogs("bg", core.bgClient);
+      // if (!core.isUsingSharedChannel()) {
+      //   await startListeningStatus("bg", core.backgroundClient);
+      //   await startListeningLogs("bg", core.backgroundClient);
       // }
       // return right(unit);
     });
@@ -250,8 +252,8 @@ class HiddifyCoreService with InfraLogger {
       }
 
       // loggy.debug("resetting tunnel");
-      final res = await core.resetTunnel();
-      if (res) {
+      final tunnelResetSucceeded = await core.resetTunnel();
+      if (tunnelResetSucceeded) {
         return right(unit);
       }
       return left("failed to reset tunnel");
@@ -260,7 +262,7 @@ class HiddifyCoreService with InfraLogger {
 
   // Stream<List<OutboundGroup>> watchGroups() async* {
   //   loggy.debug("watching groups");
-  //   yield* core.bgClient.outboundsInfo(Empty()).map((event) => event.items);
+  //   yield* core.backgroundClient.outboundsInfo(Empty()).map((event) => event.items);
   //   // res?.cancel();
   // }
 
@@ -273,15 +275,15 @@ class HiddifyCoreService with InfraLogger {
       return;
     }
     try {
-      yield* core.bgClient.outboundsInfo(Empty()).map((event) => event.items.isEmpty ? null : event.items.first);
+      yield* core.backgroundClient.outboundsInfo(Empty()).map((event) => event.items.isEmpty ? null : event.items.first);
     } catch (e) {
       loggy.error("error watching group: $e");
       rethrow;
     }
     // //emitting first event immediately
-    // yield* core.bgClient.outboundsInfo(Empty()).take(1).map((event) => event.items.isEmpty ? null : event.items.first);
+    // yield* core.backgroundClient.outboundsInfo(Empty()).take(1).map((event) => event.items.isEmpty ? null : event.items.first);
     // //emitting other event after every 4 seconds(latest event)
-    // yield* core.bgClient.outboundsInfo(Empty()).throttleTime(const Duration(seconds: 4), leading: false, trailing: true).map((event) => event.items.isEmpty ? null : event.items.first);
+    // yield* core.backgroundClient.outboundsInfo(Empty()).throttleTime(const Duration(seconds: 4), leading: false, trailing: true).map((event) => event.items.isEmpty ? null : event.items.first);
   }
 
   Stream<List<OutboundGroup>> watchActiveGroups() async* {
@@ -293,7 +295,7 @@ class HiddifyCoreService with InfraLogger {
     }
 
     try {
-      yield* core.bgClient
+      yield* core.backgroundClient
           .mainOutboundsInfo(Empty())
           .map((event) {
             return latest = event.items;
@@ -311,7 +313,7 @@ class HiddifyCoreService with InfraLogger {
   ResponseStream<SystemInfo> watchStats() {
     loggy.debug("watching stats");
     try {
-      return core.bgClient.getSystemInfoStream(Empty());
+      return core.backgroundClient.getSystemInfoStream(Empty());
     } catch (e) {
       loggy.error("error watching stats: $e");
       rethrow;
@@ -322,11 +324,11 @@ class HiddifyCoreService with InfraLogger {
     return TaskEither(() async {
       loggy.debug("selecting outbound");
       try {
-        final res = await core.bgClient.selectOutbound(
+        final selectResponse = await core.backgroundClient.selectOutbound(
           SelectOutboundRequest(groupTag: groupTag, outboundTag: outboundTag),
           options: CallOptions(timeout: const Duration(seconds: 1)),
         );
-        if (res.code != ResponseCode.OK) return left("${res.code} ${res.message}");
+        if (selectResponse.code != ResponseCode.OK) return left("${selectResponse.code} ${selectResponse.message}");
 
         return right(unit);
       } catch (e) {
@@ -340,8 +342,8 @@ class HiddifyCoreService with InfraLogger {
     return TaskEither(() async {
       loggy.debug("url test");
       try {
-        final res = await core.bgClient.urlTest(UrlTestRequest(tag: tag));
-        if (res.code != ResponseCode.OK) return left("${res.code} ${res.message}");
+        final urlTestResponse = await core.backgroundClient.urlTest(UrlTestRequest(tag: tag));
+        if (urlTestResponse.code != ResponseCode.OK) return left("${urlTestResponse.code} ${urlTestResponse.message}");
 
         return right(unit);
       } catch (e) {
@@ -360,8 +362,8 @@ class HiddifyCoreService with InfraLogger {
       loggy.debug("core is not initialized, returning empty log stream");
       return;
     }
-    await startListeningLogs("bg", core.bgClient);
-    await startListeningLogs("fg", core.fgClient);
+    await startListeningLogs("bg", core.backgroundClient);
+    await startListeningLogs("fg", core.foregroundClient);
     try {
       yield* logController.stream;
     } catch (e) {
@@ -376,22 +378,22 @@ class HiddifyCoreService with InfraLogger {
     //   });
     // }
 
-    // // Create streams for both fg and bg clients with retry logic
-    // final fgLogStream = logStream(core.fgClient);
+    // // Create streams for both foreground and background clients with retry logic
+    // final foregroundLogStream = logStream(core.foregroundClient);
 
-    // if (core.bgClient == core.fgClient) {
-    //   yield* fgLogStream;
+    // if (core.backgroundClient == core.foregroundClient) {
+    //   yield* foregroundLogStream;
     //   return;
     // }
-    // final bgLogStream = logStream(core.bgClient);
-    // yield* MergeStream([bgLogStream, fgLogStream]);
+    // final backgroundLogStream = logStream(core.backgroundClient);
+    // yield* MergeStream([backgroundLogStream, foregroundLogStream]);
   }
 
   TaskEither<String, Unit> clearLogs() {
     return TaskEither(() async {
       loggy.debug("clearing logs");
       logBuffer.clear();
-      // final res = await core.bgClient(Empty());
+      // final res = await core.backgroundClient(Empty());
       // if (res.code != ResponseCode.OK) return left("${res.code} ${res.message}");
       return right(unit);
     });
@@ -404,7 +406,7 @@ class HiddifyCoreService with InfraLogger {
   }) {
     return TaskEither(() async {
       loggy.debug("generating warp config");
-      final warpConfig = await core.fgClient.generateWarpConfig(
+      final warpConfig = await core.foregroundClient.generateWarpConfig(
         GenerateWarpConfigRequest(
           licenseKey: licenseKey,
           accountId: previousAccountId,
@@ -423,15 +425,15 @@ class HiddifyCoreService with InfraLogger {
   }
 
   Stream<CoreStatus> watchStatus() async* {
-    await startListeningStatus("bg", core.bgClient);
+    await startListeningStatus("bg", core.backgroundClient);
     yield* statusController.stream;
     // .endWith(const CoreStatus.stopped());
   }
 
-  Future<void> startListeningStatus(String key, CoreClient cc) async {
-    await listenSingle<CoreStatus>(
-      "${key}StatusListener",
-      () => cc
+  Future<void> startListeningStatus(String listenerKey, CoreClient coreClient) async {
+    await registerSingleStreamListener<CoreStatus>(
+      "${listenerKey}StatusListener",
+      () => coreClient
           .coreInfoListener(Empty(), options: grpcOptions)
           .doOnCancel(() {
             loggy.error("status", "Canceld");
@@ -453,23 +455,23 @@ class HiddifyCoreService with InfraLogger {
           }),
       // .endWith(const CoreStatus.stopped())
       onError: (error) {
-        loggy.error("Stream error in ${key}StatusListener: $error");
+        loggy.error("Stream error in ${listenerKey}StatusListener: $error");
 
         // currentState = const CoreStatus.stopped();
         // statusController.add(currentState);
 
-        // startListeningStatus(key, cc);
+        // startListeningStatus(listenerKey, coreClient);
       },
     );
   }
 
-  Future<void> startListeningLogs(String key, CoreClient cc) async {
+  Future<void> startListeningLogs(String listenerKey, CoreClient coreClient) async {
     final logLevel = ref.read(ConfigOptions.logLevel);
     final coreLogLevel = getCoreLogLevel(logLevel);
-    final listenKey = "${key}LogListener";
-    // await stopListenSingle(listenKey);
-    await listenSingle<LogMessage>(listenKey, () {
-      return cc.logListener(LogRequest(level: coreLogLevel), options: grpcOptions).map((event) {
+    final listenKey = "${listenerKey}LogListener";
+    // await cancelStreamListenerByKey(listenKey);
+    await registerSingleStreamListener<LogMessage>(listenKey, () {
+      return coreClient.logListener(LogRequest(level: coreLogLevel), options: grpcOptions).map((event) {
         // Handle incoming event
         logBuffer.add(event);
         if (logBuffer.length > 300) {
@@ -485,33 +487,33 @@ class HiddifyCoreService with InfraLogger {
     });
   }
 
-  Future<void> stopListenSingle(String key) async {
+  Future<void> cancelStreamListenerByKey(String listenerKey) async {
     // Collect keys to remove first
     final keysToRemove = subscriptions.entries
-        .where((entry) => entry.key.startsWith(key))
+        .where((entry) => entry.key.startsWith(listenerKey))
         .map((entry) => entry.key)
         .toList();
 
     // Cancel and remove
     for (final k in keysToRemove) {
-      final sub = subscriptions[k];
-      await sub?.cancel(); // cancel the subscription
+      final subscription = subscriptions[k];
+      await subscription?.cancel(); // cancel the subscription
 
       subscriptions.remove(k);
     }
   }
 
-  Future<StreamSubscription<T>?> listenSingle<T>(
-    String key,
-    Stream<T> Function() stream, {
+  Future<StreamSubscription<T>?> registerSingleStreamListener<T>(
+    String listenerKey,
+    Stream<T> Function() streamFactory, {
     Function(dynamic error)? onError,
   }) async {
-    if (subscriptions.containsKey(key)) {
-      // return subscriptions[key] as StreamSubscription<T>?;
-      await stopListenSingle(key);
+    if (subscriptions.containsKey(listenerKey)) {
+      // return subscriptions[listenerKey] as StreamSubscription<T>?;
+      await cancelStreamListenerByKey(listenerKey);
     }
-    subscriptions[key] = null;
-    subscriptions[key] = stream().listen(
+    subscriptions[listenerKey] = null;
+    subscriptions[listenerKey] = streamFactory().listen(
       (event) {
         // loggy.debug(event);
       },
@@ -519,11 +521,11 @@ class HiddifyCoreService with InfraLogger {
       onError: (error) {
         loggy.log(loggyl.LogLevel.error, 'Stream error: $error');
         onError?.call(error);
-        subscriptions[key]?.cancel();
-        subscriptions.remove(key);
+        subscriptions[listenerKey]?.cancel();
+        subscriptions.remove(listenerKey);
       },
     );
-    return subscriptions[key] as StreamSubscription<T>?;
+    return subscriptions[listenerKey] as StreamSubscription<T>?;
   }
 
   loggyl.LogLevel getLogLevel(LogLevel level) {
@@ -554,14 +556,14 @@ class HiddifyCoreService with InfraLogger {
     if (!core.isInitialized()) {
       return;
     }
-    if (!core.isSingleChannel()) {
-      await stopListenSingle("fg");
-      await stopListenSingle("bg");
+    if (!core.isUsingSharedChannel()) {
+      await cancelStreamListenerByKey("fg");
+      await cancelStreamListenerByKey("bg");
       try {
-        await core.fgClient.close(CloseRequest(mode: SetupMode.GRPC_NORMAL_INSECURE));
+        await core.foregroundClient.close(CloseRequest(mode: SetupMode.GRPC_NORMAL_INSECURE));
       } catch (e) {}
       try {
-        await core.fgClient.close(CloseRequest(mode: SetupMode.GRPC_NORMAL));
+        await core.foregroundClient.close(CloseRequest(mode: SetupMode.GRPC_NORMAL));
       } catch (e) {}
     }
   }
