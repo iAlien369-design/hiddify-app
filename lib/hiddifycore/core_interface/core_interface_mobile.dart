@@ -31,7 +31,7 @@ class CoreInterfaceMobile extends CoreInterface with InfraLogger {
   static const portBack = 17079;
   static const portFront = 17078;
 
-  bool _isBgClientAvailable = false;
+  bool _isBackgroundClientAvailable = false;
   bool _debug = false;
 
   late LastStream<CoreStatus> _status;
@@ -66,8 +66,8 @@ class CoreInterfaceMobile extends CoreInterface with InfraLogger {
         "mode": mode,
         "debug": debug,
       });
-      final res = await helloClient.sayHello(HelloRequest(name: "test"));
-      loggy.info(res.toString());
+      final helloResponse = await helloClient.sayHello(HelloRequest(name: "test"));
+      loggy.info(helloResponse.toString());
     }
 
     // serverPublicKey = await methodChannel.invokeMethod<Uint8List>("get_grpc_server_public_key") ?? Uint8List.fromList([]);
@@ -81,7 +81,7 @@ class CoreInterfaceMobile extends CoreInterface with InfraLogger {
     // var chanelOption = ChannelOptions(
     //   credentials: MTLSChannelCredentials(serverPublicKey: serverPublicKey, clientPrivateKey: cert.privateKey as ECPrivateKey),
     // );
-    fgClient = CoreClient(
+    foregroundClient = CoreClient(
       ClientChannel(
         '127.0.0.1',
         port: portFront,
@@ -89,7 +89,7 @@ class CoreInterfaceMobile extends CoreInterface with InfraLogger {
       ),
     );
 
-    bgClient = CoreClient(
+    backgroundClient = CoreClient(
       ClientChannel(
         '127.0.0.1',
         port: portBack,
@@ -113,7 +113,7 @@ class CoreInterfaceMobile extends CoreInterface with InfraLogger {
       "debug": _debug,
     });
 
-    _isBgClientAvailable = true;
+    _isBackgroundClientAvailable = true;
     loggy.info("Waiting for starting core");
     for (var i = 0; i < 20; i++) {
       try {
@@ -152,7 +152,7 @@ class CoreInterfaceMobile extends CoreInterface with InfraLogger {
       return false;
     }
 
-    _isBgClientAvailable = false;
+    _isBackgroundClientAvailable = false;
     return true;
   }
 
@@ -161,8 +161,8 @@ class CoreInterfaceMobile extends CoreInterface with InfraLogger {
   }
 
   @override
-  Future<bool> isBgClientAvailable() async {
-    return _isBgClientAvailable;
+  Future<bool> isBackgroundClientAvailable() async {
+    return _isBackgroundClientAvailable;
   }
 
   @override
@@ -172,12 +172,12 @@ class CoreInterfaceMobile extends CoreInterface with InfraLogger {
   }
 
   @override
-  Future<bool> isActiveFg() async {
+  Future<bool> isForegroundServiceActive() async {
     return await isPortOpen("127.0.0.1", portFront);
   }
 
   @override
-  Future<bool> isActiveBg() async {
+  Future<bool> isBackgroundServiceActive() async {
     return await isPortOpen("127.0.0.1", portBack);
   }
 }

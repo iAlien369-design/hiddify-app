@@ -3,8 +3,8 @@ import 'package:hiddify/hiddifycore/generated/v2/hcore/hcore_service.pbgrpc.dart
 import 'package:hiddify/singbox/model/core_status.dart';
 
 class CoreInterface {
-  late CoreClient fgClient;
-  late CoreClient bgClient;
+  late CoreClient foregroundClient;
+  late CoreClient backgroundClient;
 
   Future<String> setup(Directories directories, bool debug, int mode) async {
     return "";
@@ -22,30 +22,30 @@ class CoreInterface {
     return false;
   }
 
-  Future<bool> isBgClientAvailable() async {
+  Future<bool> isBackgroundClientAvailable() async {
     return true;
   }
 
-  bool isSingleChannel() {
+  bool isUsingSharedChannel() {
     // return true;
-    return fgClient == bgClient;
+    return foregroundClient == backgroundClient;
   }
 
   Future<bool> resetTunnel() async {
     return false;
   }
 
-  Future<bool> isActiveFg() async {
+  Future<bool> isForegroundServiceActive() async {
     return true;
   }
 
-  Future<bool> isActiveBg() async {
+  Future<bool> isBackgroundServiceActive() async {
     return true;
   }
 
   bool isInitialized() {
     try {
-      bgClient; // touch it
+      backgroundClient; // touch it
       return true;
     } catch (_) {
       return false;
