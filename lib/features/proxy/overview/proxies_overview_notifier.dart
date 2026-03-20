@@ -37,8 +37,11 @@ bool selectOutboundInGroup(OutboundGroup outbounds, String outboundTag) {
   final newSelected = outbounds.items.where((e) => e.tag == outboundTag).firstOrNull;
   if (newSelected == null) return false;
   for (final item in outbounds.items) {
-    item.isSelected = item.tag == outboundTag;
+    if (item.isSelected && item.tag != outboundTag) {
+      item.isSelected = false;
+    }
   }
+  newSelected.isSelected = true;
   outbounds.selected = newSelected.tag;
   return true;
 }
