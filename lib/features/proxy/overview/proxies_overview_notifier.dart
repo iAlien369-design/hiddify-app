@@ -34,12 +34,12 @@ enum ProxiesSort {
 
 @visibleForTesting
 bool selectOutboundInGroup(OutboundGroup outbounds, String outboundTag) {
-  final newselected = outbounds.items.where((e) => e.tag == outboundTag).firstOrNull;
-  if (newselected == null) return false;
+  final newSelected = outbounds.items.where((e) => e.tag == outboundTag).firstOrNull;
+  if (newSelected == null) return false;
   for (final item in outbounds.items) {
     item.isSelected = item.tag == outboundTag;
   }
-  outbounds.selected = newselected.tag;
+  outbounds.selected = newSelected.tag;
   return true;
 }
 
