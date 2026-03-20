@@ -11,6 +11,7 @@ import 'package:hiddify/features/proxy/data/proxy_data_providers.dart';
 import 'package:hiddify/features/proxy/model/proxy_failure.dart';
 import 'package:hiddify/hiddifycore/generated/v2/hcore/hcore.pb.dart';
 import 'package:hiddify/hiddifycore/init_signal.dart';
+import 'package:meta/meta.dart';
 import 'package:hiddify/utils/riverpod_utils.dart';
 import 'package:hiddify/utils/utils.dart';
 import 'package:riverpod_annotation/riverpod_annotation.dart';
@@ -29,6 +30,20 @@ enum ProxiesSort {
     ProxiesSort.delay => t.pages.proxies.sortOptions.delay,
     ProxiesSort.usage => t.pages.proxies.sortOptions.usage,
   };
+}
+
+@visibleForTesting
+bool selectOutboundInGroup(OutboundGroup outbounds, String outboundTag) {
+  final newSelected = outbounds.items.where((e) => e.tag == outboundTag).firstOrNull;
+  if (newSelected == null) return false;
+  for (final item in outbounds.items) {
+    if (item.isSelected && item.tag != outboundTag) {
+      item.isSelected = false;
+    }
+  }
+  newSelected.isSelected = true;
+  outbounds.selected = newSelected.tag;
+  return true;
 }
 
 @Riverpod(keepAlive: true)
@@ -210,10 +225,7 @@ class ProxiesOverviewNotifier extends _$ProxiesOverviewNotifier with AppLogger {
       loggy.warning("error selecting outbound", err);
       throw err;
     }).run();
-    final newselected = outbounds.items.where((e) => e.tag == outboundTag).firstOrNull;
-    if (newselected != null) {
-      newselected.isSelected = true;
-      outbounds.selected = newselected.tag;
+    if (selectOutboundInGroup(outbounds, outboundTag)) {
       state = AsyncValue.data(outbounds);
     }
   }
