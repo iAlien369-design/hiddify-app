@@ -118,6 +118,45 @@ void main() {
       });
     });
 
+    test("Should not throw and return null when subscription-userinfo has a segment without '='", () {
+      // Regression test: v.split('=').second used to throw RangeError on segments without '='.
+      final headers = <String, List<String>>{
+        "profile-title": ["title"],
+        "subscription-userinfo": ["upload=0;badvalue;download=1024;total=10240;expire=1704054600"],
+      };
+      final fixedHeaders = headers.map((key, value) {
+        if (value.length == 1) return MapEntry(key, value.first);
+        return MapEntry(key, value);
+      });
+      final allHeaders = ProfileParser.populateHeaders(content: '', remoteHeaders: fixedHeaders);
+      expect(allHeaders.isRight(), true);
+      allHeaders.match((l) {}, (r) {
+        final profile = ProfileParser.parse(
+          tempFilePath: '',
+          profile: RemoteProfileEntity(
+            id: const Uuid().v4(),
+            active: true,
+            name: '',
+            url: validBaseUrl,
+            lastUpdate: DateTime.now(),
+            populatedHeaders: r,
+          ),
+        );
+        // Must not throw and must produce a valid profile with correct sub-info.
+        expect(profile.isRight(), true);
+        profile.match((l) {}, (r) {
+          r.map(
+            remote: (rp) {
+              expect(rp.subInfo, isNotNull);
+              expect(rp.subInfo!.upload, equals(0));
+              expect(rp.subInfo!.download, equals(1024));
+            },
+            local: (lp) {},
+          );
+        });
+      });
+    });
+
     test("Should use infinite when given 0 for subscription properties", () {
       final headers = <String, List<String>>{
         "profile-title": ["title"],

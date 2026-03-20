@@ -230,7 +230,7 @@ class ProfileParser {
     // Start workers
     await Future.wait(List.generate(parallelism, (_) => worker()));
 
-    if (results.any((e) => e != null)) {
+    if (results.every((e) => e != null)) {
       final newContent = results.join("\n");
       await File(tempFilePath).writeAsString(newContent);
     }
@@ -282,7 +282,11 @@ class ProfileParser {
 
   static SubscriptionInfo? _parseSubscriptionInfo(String subInfoStr) {
     final values = subInfoStr.split(';');
-    final map = {for (final v in values) v.split('=').first.trim(): num.tryParse(v.split('=').second.trim())?.toInt()};
+    final map = {
+      for (final v in values)
+        if (v.indexOf('=') case final idx when idx != -1)
+          v.substring(0, idx).trim(): num.tryParse(v.substring(idx + 1).trim())?.toInt(),
+    };
     if (map case {"upload": final upload?, "download": final download?, "total": final total, "expire": var expire}) {
       final total1 = (total == null || total == 0) ? infiniteTrafficThreshold : total;
       expire = (expire == null || expire == 0) ? infiniteTimeThreshold : expire;
