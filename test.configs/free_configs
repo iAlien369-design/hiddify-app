@@ -12,6 +12,18 @@
   },
   
   {
+    "region": ["ir", "cn", "other"],
+    "title": {"en": "Hiddify Snippet", "fa": "اسنیپت هیدیفای"},
+    "sublink": "https://raw.githubusercontent.com/hiddify/hiddify-app/refs/heads/main/test.configs/hiddify_snippet",
+    "tags": { "en": ["snippet", "warp", "fragment"], "fa": ["اسنیپت", "وارپ", "فرگمنت"] },
+    "consent": {
+        "en": "This sample snippet imports the official Hiddify WARP profile and enables fragmentation so it can be added directly inside Hiddify as a ready-to-run example.",
+        "fa": "این اسنیپت نمونه، پروفایل رسمی وارپ هیدیفای را ایمپورت می‌کند و فرگمنت را فعال می‌کند تا به عنوان یک نمونه آماده اجرا مستقیماً داخل هیدیفای اضافه شود."
+    },
+    "needed_features": ["fragment"]
+  },
+  
+  {
     "region": ["ir"],
     "title": {"en": "Anonymous 𝕏", "fa": "انونیموس 𝕏"},
     "sublink": "https://raw.githubusercontent.com/4n0nymou3/multi-proxy-config-fetcher/refs/heads/main/configs/proxy_configs.txt",
